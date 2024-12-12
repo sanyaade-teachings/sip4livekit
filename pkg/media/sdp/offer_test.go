@@ -41,7 +41,7 @@ func getInline(s string) string {
 
 func TestSDPMediaOffer(t *testing.T) {
 	const port = 12345
-	_, offer, err := OfferMedia(port, false)
+	_, offer, err := OfferMedia(port, EncryptionNone)
 	require.NoError(t, err)
 	require.Equal(t, &sdp.MediaDescription{
 		MediaName: sdp.MediaName{
@@ -61,7 +61,7 @@ func TestSDPMediaOffer(t *testing.T) {
 		},
 	}, offer)
 
-	_, offer, err = OfferMedia(port, true)
+	_, offer, err = OfferMedia(port, EncryptionRequire)
 	require.NoError(t, err)
 	i := slices.IndexFunc(offer.Attributes, func(a sdp.Attribute) bool {
 		return a.Key == "crypto"
@@ -92,7 +92,7 @@ func TestSDPMediaOffer(t *testing.T) {
 	media.CodecSetEnabled(g722.SDPName, false)
 	defer media.CodecSetEnabled(g722.SDPName, true)
 
-	_, offer, err = OfferMedia(port, false)
+	_, offer, err = OfferMedia(port, EncryptionNone)
 	require.NoError(t, err)
 	require.Equal(t, &sdp.MediaDescription{
 		MediaName: sdp.MediaName{
@@ -272,7 +272,7 @@ func TestSDPMediaAnswer(t *testing.T) {
 			require.Equal(t, c.exp, got)
 		})
 	}
-	_, offer, err := OfferMedia(port, false)
+	_, offer, err := OfferMedia(port, EncryptionNone)
 	require.NoError(t, err)
 	require.Equal(t, &sdp.MediaDescription{
 		MediaName: sdp.MediaName{

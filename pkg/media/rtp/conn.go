@@ -75,6 +75,7 @@ type UDPConn interface {
 	Close() error
 }
 
+// Deprecated: use MediaPort instead
 type Conn struct {
 	log            logger.Logger
 	wmu            sync.Mutex

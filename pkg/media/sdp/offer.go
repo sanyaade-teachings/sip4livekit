@@ -33,6 +33,14 @@ import (
 	"github.com/livekit/sip/pkg/media/srtp"
 )
 
+type Encryption int
+
+const (
+	EncryptionNone Encryption = iota
+	EncryptionAllow
+	EncryptionRequire
+)
+
 type CodecInfo struct {
 	Type  byte
 	Codec media.Codec
@@ -92,7 +100,7 @@ func appendCryptoProfiles(attrs []sdp.Attribute, profiles []srtp.Profile) []sdp.
 	return attrs
 }
 
-func OfferMedia(rtpListenerPort int, encrypted bool) (MediaDesc, *sdp.MediaDescription, error) {
+func OfferMedia(rtpListenerPort int, encrypted Encryption) (MediaDesc, *sdp.MediaDescription, error) {
 	// Static compiler check for frame duration hardcoded below.
 	var _ = [1]struct{}{}[20*time.Millisecond-rtp.DefFrameDur]
 
@@ -117,7 +125,7 @@ func OfferMedia(rtpListenerPort int, encrypted bool) (MediaDesc, *sdp.MediaDescr
 		})
 	}
 	var cryptoProfiles []srtp.Profile
-	if encrypted {
+	if encrypted != EncryptionNone {
 		var err error
 		cryptoProfiles, err = srtp.DefaultProfiles()
 		if err != nil {
@@ -132,7 +140,7 @@ func OfferMedia(rtpListenerPort int, encrypted bool) (MediaDesc, *sdp.MediaDescr
 	}...)
 
 	proto := "AVP"
-	if encrypted {
+	if encrypted != EncryptionNone {
 		proto = "SAVP"
 	}
 
@@ -198,7 +206,7 @@ type Offer Description
 
 type Answer Description
 
-func NewOffer(publicIp netip.Addr, rtpListenerPort int, encrypted bool) (*Offer, error) {
+func NewOffer(publicIp netip.Addr, rtpListenerPort int, encrypted Encryption) (*Offer, error) {
 	sessId := rand.Uint64() // TODO: do we need to track these?
 
 	m, mediaDesc, err := OfferMedia(rtpListenerPort, encrypted)
@@ -238,7 +246,7 @@ func NewOffer(publicIp netip.Addr, rtpListenerPort int, encrypted bool) (*Offer,
 	}, nil
 }
 
-func (d *Offer) Answer(publicIp netip.Addr, rtpListenerPort int) (*Answer, *MediaConfig, error) {
+func (d *Offer) Answer(publicIp netip.Addr, rtpListenerPort int, enc Encryption) (*Answer, *MediaConfig, error) {
 	audio, err := SelectAudio(d.MediaDesc)
 	if err != nil {
 		return nil, nil, err
@@ -248,7 +256,7 @@ func (d *Offer) Answer(publicIp netip.Addr, rtpListenerPort int) (*Answer, *Medi
 		sconf *srtp.Config
 		sprof *srtp.Profile
 	)
-	if len(d.CryptoProfiles) != 0 {
+	if len(d.CryptoProfiles) != 0 && enc != EncryptionNone {
 		answer, err := srtp.DefaultProfiles()
 		if err != nil {
 			return nil, nil, err
@@ -256,6 +264,9 @@ func (d *Offer) Answer(publicIp netip.Addr, rtpListenerPort int) (*Answer, *Medi
 		sconf, sprof, err = SelectCrypto(d.CryptoProfiles, answer, true)
 		if err != nil {
 			return nil, nil, err
+		}
+		if sprof == nil && enc == EncryptionRequire {
+			return nil, nil, errors.New("no common encryption profiles")
 		}
 	}
 
@@ -304,16 +315,19 @@ func (d *Offer) Answer(publicIp netip.Addr, rtpListenerPort int) (*Answer, *Medi
 		}, nil
 }
 
-func (d *Answer) Apply(offer *Offer) (*MediaConfig, error) {
+func (d *Answer) Apply(offer *Offer, enc Encryption) (*MediaConfig, error) {
 	audio, err := SelectAudio(d.MediaDesc)
 	if err != nil {
 		return nil, err
 	}
 	var sconf *srtp.Config
-	if len(d.CryptoProfiles) != 0 {
+	if len(d.CryptoProfiles) != 0 && enc != EncryptionNone {
 		sconf, _, err = SelectCrypto(offer.CryptoProfiles, d.CryptoProfiles, false)
 		if err != nil {
 			return nil, err
+		}
+		if sconf == nil && enc == EncryptionRequire {
+			return nil, errors.New("no common encryption profiles")
 		}
 	}
 	return &MediaConfig{
@@ -515,5 +529,5 @@ func SelectCrypto(offer, answer []srtp.Profile, swap bool) (*srtp.Config, *srtp.
 			return c, prof, nil
 		}
 	}
-	return nil, nil, errors.New("no common crypto")
+	return nil, nil, nil
 }

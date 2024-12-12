@@ -31,6 +31,7 @@ import (
 
 	"github.com/livekit/mediatransportutil/pkg/rtcconfig"
 	"github.com/livekit/protocol/logger"
+	"github.com/livekit/sip/pkg/media/sdp"
 
 	"github.com/livekit/sip/pkg/media"
 	"github.com/livekit/sip/pkg/media/rtp"
@@ -185,13 +186,13 @@ func TestMediaPort(t *testing.T) {
 
 			for _, tconf := range []struct {
 				Rate      int
-				Encrypted bool
+				Encrypted sdp.Encryption
 			}{
-				{nativeRate, false},
-				{48000, true},
+				{nativeRate, sdp.EncryptionNone},
+				{48000, sdp.EncryptionRequire},
 			} {
 				suff := ""
-				if tconf.Encrypted {
+				if tconf.Encrypted != sdp.EncryptionNone {
 					suff = " srtp"
 				}
 				t.Run(fmt.Sprintf("%d%s", tconf.Rate, suff), func(t *testing.T) {
@@ -199,14 +200,14 @@ func TestMediaPort(t *testing.T) {
 
 					log := logger.GetLogger()
 
-					m1, err := NewMediaPortWith(log.WithName("one"), nil, c1, &MediaConfig{
+					m1, err := NewMediaPortWith(log.WithName("one"), nil, c1, &MediaOptions{
 						IP:    newIP("1.1.1.1"),
 						Ports: rtcconfig.PortRange{Start: 10000},
 					}, tconf.Rate)
 					require.NoError(t, err)
 					defer m1.Close()
 
-					m2, err := NewMediaPortWith(log.WithName("two"), nil, c2, &MediaConfig{
+					m2, err := NewMediaPortWith(log.WithName("two"), nil, c2, &MediaOptions{
 						IP:    newIP("2.2.2.2"),
 						Ports: rtcconfig.PortRange{Start: 20000},
 					}, tconf.Rate)
@@ -220,14 +221,14 @@ func TestMediaPort(t *testing.T) {
 
 					t.Logf("SDP offer:\n%s", string(offerData))
 
-					answer, conf, err := m2.SetOffer(offerData)
+					answer, conf, err := m2.SetOffer(offerData, tconf.Encrypted)
 					require.NoError(t, err)
 					answerData, err := answer.SDP.Marshal()
 					require.NoError(t, err)
 
 					t.Logf("SDP answer:\n%s", string(answerData))
 
-					mc, err := m1.SetAnswer(offer, answerData)
+					mc, err := m1.SetAnswer(offer, answerData, tconf.Encrypted)
 					require.NoError(t, err)
 
 					err = m1.SetConfig(mc)
